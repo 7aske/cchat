@@ -15,11 +15,12 @@
 void panic(char*);
 int get_rand_int();
 void user_input(char*, int);
-void prepend_username(char dest[], char src[], char name[]);
+void prepend_username(char[], char[]);
 void* listener(void*);
 int main(int argc, char* argv[])
 {
     // random greeting messages
+    char quitstr[] = "quit";
     char* greetings[] = {
         " is locked and loaded",
         " came prepared",
@@ -27,9 +28,9 @@ int main(int argc, char* argv[])
         " is in a hurry"
     };
     int sock, n, port;
-    struct sockaddr_in serv_addr, from;
+    struct sockaddr_in serv_addr;
     struct hostent* server;
-    char buf[BUF_S], resp[BUF_S];
+    char buf[BUF_S];
     char name[NAME_S];
 
     pthread_t thread;
@@ -64,29 +65,33 @@ int main(int argc, char* argv[])
     }
 
     // send a greeting message to server
-    strcpy(resp, name);
-    strcat(resp, greetings[get_rand_int() % 3]);
-    n = send(sock, resp, strlen(resp), 0);
+    strcpy(buf, name);
+    strcat(buf, greetings[get_rand_int() % 3]);
+    n = send(sock, buf, strlen(buf), 0);
     if (n < 0) {
         printf("ERROR failed sending to server\n");
     }
-    bzero(resp, BUF_S);
+    bzero(buf, BUF_S);
 
     // create a thread to listen to incoming messages
-    pthread_create(&thread, NULL, listener, sock);
+    n = pthread_create(&thread, NULL, listener, sock);
+    if (n < 0) {
+        panic("ERROR failed to create listener thread");
+    }
 
     // continiously prompt user for input to chat
-    while (strcmp(buf, "exit") != 0) {
+    while (strncmp(buf, quitstr, 4) != 0) {
         user_input(buf, BUF_S);
 
         // prepend username to message string
-        prepend_username(resp, buf, name);
-        n = send(sock, resp, strlen(resp), 0);
+        prepend_username(buf, name);
+        n = send(sock, buf, strlen(buf), 0);
         if (n < 0) {
             panic("ERROR sending to server");
         }
     }
-    pthread_join(thread, NULL);
+    // pthread_join(thread, NULL);
+    // pthread_exit(0);
     printf("exited\n");
 }
 
@@ -102,7 +107,6 @@ void* listener(void* data)
         if (n < 0) {
             panic("ERROR receiving from server");
         }
-        // strcat(buf, "\n>");
         printf("\r>%s\n", buf);
         printf("\r>");
         bzero(buf, BUF_S);
@@ -119,12 +123,14 @@ void user_input(char* buf, int len)
 }
 
 // prepend username to message string
-void prepend_username(char dest[], char src[], char name[])
+void prepend_username(char src[], char name[])
 {
-    bzero(dest, BUF_S);
-    strcat(dest, name);
-    strcat(dest, ": ");
-    strcat(dest, src);
+    char buf[BUF_S];
+    bzero(buf, BUF_S);
+    strcpy(buf, name);
+    strcat(buf, ": ");
+    strcat(buf, src);
+    strcpy(src, buf);
 }
 
 // get random seeded integer

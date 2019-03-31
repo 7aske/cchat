@@ -9,7 +9,6 @@
 
 #define BUF_S 1024
 #define ADDR_S 32
-#define NAME_S 16
 
 // maximum number of clients
 #define C_MAX 5
@@ -32,8 +31,6 @@ int main(int argc, char* argv[])
     struct sockaddr_in client;
     char buf[BUF_S];
     char addr[ADDR_S];
-
-    char name[NAME_S];
 
     pthread_t thread;
     pthread_t t_pool[C_MAX];
@@ -109,27 +106,22 @@ int main(int argc, char* argv[])
             // passed to the handler thread
             s_data->socket = client_sock;
             s_data->active_sockets = active_socks;
-            current_sock++;
 
             // print file descriptors and memory locations for debugging
-            printf("%x afd: %d\n", &(s_data->socket), s_data->socket);
+            printf("0x%x afd: %d\n", &(s_data->socket), s_data->socket);
             for (int i = 0; i < C_MAX; i++) {
-                printf("%x  fd: %d\n", &(s_data->active_sockets[i]), s_data->active_sockets[i]);
+                printf("0x%x  fd: %d\n", &(s_data->active_sockets[i]), s_data->active_sockets[i]);
             }
 
             // create thread with the pointer to socket data
             // that is stored in s_data
-            n = pthread_create(&thread, NULL, handler, s_data);
-            if (n < 0) {
-                printf("ERROR failed creating thread %d ", n);
-            }
+            pthread_create(&thread, NULL, handler, s_data);
         }
     }
 
     // close sockets and kill thread
     close(client_sock);
     close(sock);
-    pthread_join(thread, NULL);
     free(active_socks);
     printf("exited\n");
 }
@@ -163,13 +155,13 @@ void* handler(void* sockets)
     // on socket disconnects clear memory and free array spots
     if (n == 0) {
         printf("INFO client disconnected - %d\n", s_data->socket);
-        free(sockets);
         close_fd(s_data->socket, s_data->active_sockets);
+        free(sockets);
         return;
     } else if (n == -1) {
         printf("INFO client disconnected - %d\n", s_data->socket);
-        free(sockets);
         close_fd(s_data->socket, s_data->active_sockets);
+        free(sockets);
         return;
     }
 }
@@ -180,10 +172,11 @@ void close_fd(int fd, int* active_fds)
 {
     for (int i = 0; i < C_MAX; active_fds++, i++) {
         if (fd == *active_fds) {
-            printf("closing fd %d\n", fd);
+            printf("INFO closing fd %d\n", fd);
             close(fd);
             *active_fds = 0;
         }
+        printf("0x%x %d\n", active_fds, *active_fds);
     }
 }
 

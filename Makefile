@@ -6,10 +6,13 @@ SERVER_SRC=source/server/
 SERVER_OUT=build/
 SERVER_FN=server
 
+DEPS=-pthread
+FLAGS=-g
+
 server: $(SERVER_SRC)main.c
-	$(CC) $(SERVER_SRC)main.c -o $(SERVER_OUT)$(SERVER_FN) -pthread
+	$(CC) $(FLAGS) $(SERVER_SRC)main.c -o $(SERVER_OUT)$(SERVER_FN) $(DEPS)
 client: $(CLIENT_SRC)main.c
-	$(CC) $(CLIENT_SRC)main.c -o $(CLIENT_OUT)$(CLIENT_FN) -pthread
+	$(CC) $(FLAGS) $(CLIENT_SRC)main.c -o $(CLIENT_OUT)$(CLIENT_FN) $(DEPS)
 run-server:
 	$(SERVER_OUT)$(SERVER_FN) 8080
 run-client:
