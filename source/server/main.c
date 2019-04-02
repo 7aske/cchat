@@ -1,5 +1,6 @@
 #include <netinet/in.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,45 +14,38 @@
 // maximum number of clients
 #define C_MAX 5
 
-struct socket_data {
-    int* active_sockets;
-    int socket;
-};
-
 void panic(char*);
-void* handler(void*);
+void* _handler(void*);
 int start_server(int, struct sockaddr_in*);
 int find_free_fd(int*);
 void close_fd(int, int*);
+void* _listener(void*);
+
+static volatile __sig_atomic_t _running = 1;
+
+static void handle_interupt(int);
+
+int* active_socks;
+pthread_t* threadpool;
 
 int main(int argc, char* argv[])
 {
-    int sock, client_sock, client_len, n, port, pid;
+    int server_sock, port;
     struct sockaddr_in server;
-    struct sockaddr_in client;
     char buf[BUF_S];
-    char addr[ADDR_S];
-
-    pthread_t thread;
-    pthread_t t_pool[C_MAX];
-
-    int* active_socks;
-    int current_sock;
-
-    struct socket_data* s_data;
+    char cmd;
+    pthread_t listen_th;
+    signal(SIGINT, handle_interupt);
 
     if (argc < 2) {
         printf("ERROR usage: <port>");
         exit(0);
     }
 
-    // clear memory locations
     bzero(&server, sizeof server);
     bzero(buf, BUF_S);
-    bzero(t_pool, C_MAX);
 
     port = atoi(argv[1]);
-    current_sock = 0;
 
     server.sin_family = AF_INET;
     server.sin_addr.s_addr = INADDR_ANY;
@@ -61,108 +55,117 @@ int main(int argc, char* argv[])
     active_socks = calloc(C_MAX, sizeof(int));
 
     // create server socket
-    sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock < 0) {
+    server_sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_sock < 0) {
         panic("ERROR failed to create socket");
     }
     printf("SUCCESS socket created\n");
 
     // start server by binding the socket
-    if (start_server(sock, &server) < 0) {
+    if (start_server(server_sock, &server) < 0) {
         panic("ERROR unable to start server");
     }
     printf("INFO server started on port %d\n", port);
 
+    pthread_create(&listen_th, NULL, _listener, &server_sock);
+    printf("main_socket 0x%x %d\n", &server_sock, server_sock);
     // request listening loop
-    while (1) {
+    while (_running) {
+        if ((cmd = getchar()) == 'q') {
+            _running = 0;
+        }
+    }
+    printf("INFO closing\n");
+    // close(server_sock);
+    shutdown(server_sock, SHUT_RDWR);
+    pthread_join(listen_th, NULL);
+    free(active_socks);
+    printf("INFO closed\n");
+    exit(0);
+    return 0;
+}
+void* _listener(void* arg)
+{
+    int client_len, client_sock, current_sock;
+    int* sock;
+    char buf[BUF_S];
+    pthread_t newthread = 0;
+    struct sockaddr_in client;
+    char addr[ADDR_S];
 
-        //listen for connections
-        client_len = sizeof client;
-        client_sock = accept(sock, (struct sockaddr*)&client, (socklen_t*)&client_len);
+    bzero(&client, sizeof client);
+    sock = (int*)arg;
+    // threadpool = calloc(C_MAX, sizeof threadpool);
+    // memset(threadpool, 0, sizeof threadpool);
+
+    client_len = sizeof client;
+    printf("_listener_socket 0x%x %d\n", sock, *sock);
+    while (_running) {
+        client_sock = accept(*sock, (struct sockaddr*)&client, (socklen_t*)&client);
         if (client_sock < 0) {
-            panic("ERROR failed to create client socket");
+            printf("SOCKET SD - %d\n", client_sock);
+            printf("ERROR failed to create client socket\n");
+            break;
         }
         // parse client ip
         inet_ntop(AF_INET, &(client.sin_addr), addr, BUF_S);
         printf("INFO client connected ip: %s sock_fd: %d\n", addr, client_sock);
 
-        // get the index of a free spot in active_sockets array
-        // if the result is -1 that means that there are more
-        // available connections
         current_sock = find_free_fd(active_socks);
-        if (current_sock == -1) {
+        if (current_sock != -1) {
+            active_socks[current_sock] = client_sock;
+
+            for (int i = 0; i < C_MAX; i++) {
+                printf("0x%x  fd: %d\n", &(active_socks[i]), active_socks[i]);
+            }
+            pthread_create(&newthread, NULL, _handler, &(active_socks[current_sock]));
+            printf("INFO threadid %d\n", newthread);
+        } else {
             strcpy(buf, "Server full :(");
             send(client_sock, buf, strlen(buf), 0);
             close(client_sock);
-        } else {
-            // allocate memory to store socket specific data
-            // needed to repspond to all connected clients
-            s_data = malloc(sizeof(struct socket_data));
-            memset(s_data, 0, sizeof s_data);
-
-            // set the current client socket to array
-            active_socks[current_sock] = client_sock;
-            // set the pointer to that array to be
-            // passed to the handler thread
-            s_data->socket = client_sock;
-            s_data->active_sockets = active_socks;
-
-            // print file descriptors and memory locations for debugging
-            printf("0x%x afd: %d\n", &(s_data->socket), s_data->socket);
-            for (int i = 0; i < C_MAX; i++) {
-                printf("0x%x  fd: %d\n", &(s_data->active_sockets[i]), s_data->active_sockets[i]);
-            }
-
-            // create thread with the pointer to socket data
-            // that is stored in s_data
-            pthread_create(&thread, NULL, handler, s_data);
         }
     }
-
-    // close sockets and kill thread
-    close(client_sock);
-    close(sock);
-    free(active_socks);
-    printf("exited\n");
+    for (int i = 0; i < C_MAX; i++) {
+        int s = active_socks[i];
+        if (s > 0) {
+            printf("INFO sutting down sock_fd %d\n", s);
+            shutdown(s, SHUT_RDWR);
+        }
+    }
+    if (newthread != 0)
+        pthread_join(newthread, NULL);
 }
-
-// handler func called on start_routine()
-void* handler(void* sockets)
+void* _handler(void* arg)
 {
-    struct socket_data* s_data;
     int n;
+    int* socket;
     char buf[BUF_S];
     memset(buf, 0, BUF_S);
 
-    // cast thread arg pointer to socket_data struct
-    s_data = (struct socket_data*)sockets;
+    socket = (int*)arg;
+    printf("_handler_socket 0x%x %d\n", socket, *socket);
+    // s_data = (struct socket_data*)sockets;
 
     // listen for messages on the socket passed to the thread
-    printf("INFO starting new thread for fd %d\n", s_data->socket);
-    while ((n = recv(s_data->socket, buf, BUF_S, 0)) > 0) {
+    printf("INFO starting new thread for fd %d\n", *socket);
+    while ((n = recv(*socket, buf, BUF_S, 0)) > 0) {
         printf("INFO %s\n", buf);
 
         // on sent message forward the message
         // to all active clients except to self
         for (int i = 0; i < C_MAX; i++) {
-            if (s_data->active_sockets[i] != s_data->socket) {
-                send(s_data->active_sockets[i], buf, strlen(buf), 0);
+            if (active_socks[i] != *socket) {
+                send(active_socks[i], buf, strlen(buf), 0);
                 bzero(buf, BUF_S);
             }
         }
     }
 
     // on socket disconnects clear memory and free array spots
-    if (n == 0) {
-        printf("INFO client disconnected - %d\n", s_data->socket);
-        close_fd(s_data->socket, s_data->active_sockets);
-        free(sockets);
-        return;
-    } else if (n == -1) {
-        printf("INFO client disconnected - %d\n", s_data->socket);
-        close_fd(s_data->socket, s_data->active_sockets);
-        free(sockets);
-        return;
+    if (n <= 0) {
+        printf("INFO client disconnected - %d\n", *socket);
+        close_fd(*socket, active_socks);
     }
 }
 
@@ -207,4 +210,9 @@ void panic(char* msg)
 {
     perror(msg);
     exit(0);
+}
+static void handle_interupt(int _)
+{
+    (void)_;
+    _running = 0;
 }
