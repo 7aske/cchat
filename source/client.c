@@ -15,7 +15,7 @@
 
 static volatile __sig_atomic_t _running = 1;
 
-static void _handle_interupt(int);
+static void _handle_interrupt(int);
 
 void panic(char*);
 int get_rand_int();
@@ -27,14 +27,13 @@ int main(int argc, char* argv[])
     // random greeting messages
     char quitstr[] = "quit";
     char* greetings[] = {
-        " is locked and loaded",
-        " came prepared",
-        " ordered vanilla latte",
-        " is in a hurry"
+            " is locked and loaded",
+            " came prepared",
+            " ordered vanilla latte",
+            " is in a hurry"
     };
     int sock, n, port;
     struct sockaddr_in serv_addr;
-    struct hostent* server;
     char buf[BUF_S];
     char name[NAME_S];
 
@@ -43,15 +42,16 @@ int main(int argc, char* argv[])
     if (argc != 3) {
         panic("ERROR usage: <server> <port>");
     }
-    signal(SIGINT, _handle_interupt);
+    signal(SIGINT, _handle_interrupt);
 
     bzero((char*)&serv_addr, sizeof(struct sockaddr_in));
 
-    port = atoi(argv[2]);
+    port = strtol(argv[2], NULL, 10);
     sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) {
         panic("ERROR failed to create socket");
     }
+
 
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(port);
@@ -85,7 +85,7 @@ int main(int argc, char* argv[])
         panic("ERROR failed to create _listener thread");
     }
 
-    // continiously prompt user for input to chat
+    // continuously prompt user for input to chat
     while (_running) {
         user_input(buf, BUF_S);
         if (strncmp(buf, quitstr, 4) == 0) {
@@ -107,7 +107,7 @@ int main(int argc, char* argv[])
     printf("exited\n");
 }
 
-// thread _listener started in start_routine()
+// listener procedure that listens for messages from server
 void* _listener(void* data)
 {
     int* sock = (int*)data;
@@ -115,16 +115,20 @@ void* _listener(void* data)
 
     char buf[BUF_S];
 
-    // continiously listen for messages and print them to terminal
+    // continuously listen for messages and print them to terminal
     while (_running) {
         n = recv(*sock, buf, BUF_S, 0);
-        if (n < 0) {
+        if (n == 0) {
+            printf("ERROR server closed connection\n");
+            break;
+        } else if (n == -1) {
             printf("ERROR receiving from server\n");
         }
         printf("\r>%s\n", buf);
         printf("\r>");
         bzero(buf, BUF_S);
     }
+    return NULL;
 }
 
 // short formatting of user input
@@ -150,11 +154,12 @@ void prepend_username(char src[], char name[])
 // get random seeded integer
 int get_rand_int()
 {
-    int seed = time(NULL);
-    srand(seed);
-    return rand();
+    unsigned int seed = time(NULL);
+    return rand_r(&seed);
 }
-static void _handle_interupt(int _)
+
+// listen for CTRL+C
+static void _handle_interrupt(int _)
 {
     (void)_;
     _running = 0;
