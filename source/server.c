@@ -148,15 +148,16 @@ void *_listener(void *arg) {
 
 void *_handler(void *arg) {
     int n;
-    int *socket;
+    int *psocket;
+    int socket;
     char buf[BUF_S];
     memset(buf, 0, BUF_S);
 
-    socket = (int *) arg;
-
+    psocket = (int *) arg;
+    socket = *psocket;
     // listen for messages on the socket passed to the thread
-    printf("INFO starting new thread for fd %d\n", *socket);
-    while ((n = recv(*socket, buf, BUF_S, 0)) > 0) {
+    printf("INFO starting new thread for fd %d\n", socket);
+    while ((n = recv(socket, buf, BUF_S, 0)) > 0) {
         printf("INFO %s\n", buf);
         if (n <= 0) {
             printf("ERROR bad rcv");
@@ -164,14 +165,14 @@ void *_handler(void *arg) {
         // on sent message forward the message
         // to all active clients except to self
         for (int i = 0; i < C_MAX; i++) {
-            if (hd[i].socket != *socket) {
+            if (hd[i].socket != socket) {
                 send(hd[i].socket, buf, strlen(buf), 0);
                 bzero(buf, BUF_S);
             }
         }
     }
     printf("INFO client disconnected - 0x%x\n", socket);
-    close_fdt(socket, hd);
+    close_fdt(&socket, hd);
     return NULL;
 }
 
@@ -180,16 +181,16 @@ void *_handler(void *arg) {
 #pragma clang diagnostic ignored "-Wformat"
 
 void close_fdt(int *fd, handler_data_t *hdata) {
-    for (int i = 0; i < C_MAX; hd++, i++) {
-        if (fd == &(hd->socket)) {
-            printf("INFO closing fd 0x%x and detaching thread 0x%x\n", fd, &hd->thread);
+    for (int i = 0; i < C_MAX; i++) {
+        if (*fd == hd[i].socket) {
+            printf("INFO closing fd 0x%x and detaching thread 0x%x\n", fd, hd[i].thread);
             shutdown(*fd, SHUT_RDWR);
-            hd->socket = 0;
-            pthread_detach(hd->thread);
-            memset(&(hd->thread), 0, sizeof(pthread_t));
+            hd[i].socket = 0;
+            pthread_detach(hd[i].thread);
+            memset(&(hd[i].thread), 0, sizeof(pthread_t));
         }
-        printf("SOCK: 0x%x fd: %d\n", &hdata->socket, hdata->socket);
-        printf("THRD: 0x%x th: %d\n\n", &hdata->thread, (int) hdata->thread);
+        printf("SOCK: 0x%x fd: %d\n", &hdata[i].socket, hdata[i].socket);
+        printf("THRD: 0x%x th: %d\n\n", &hdata[i].thread, (int) hdata[i].thread);
     }
 }
 

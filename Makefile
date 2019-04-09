@@ -11,15 +11,15 @@ FLAGS=-g
 
 default_target: all
 
-all: $(SERVER_SRC)main.c $(CLIENT_SRC)main.c
-	$(CC) $(FLAGS) $(SERVER_SRC)main.c -o $(SERVER_OUT)$(SERVER_FN) $(DEPS)
-	$(CC) $(FLAGS) $(CLIENT_SRC)main.c -o $(CLIENT_OUT)$(CLIENT_FN) $(DEPS)
+all: $(SERVER_SRC)server.c $(CLIENT_SRC)client.c
+	$(CC) $(FLAGS) $(SERVER_SRC)server.c -o $(SERVER_OUT)$(SERVER_FN) $(DEPS)
+	$(CC) $(FLAGS) $(CLIENT_SRC)client.c -o $(CLIENT_OUT)$(CLIENT_FN) $(DEPS)
 
-server: $(SERVER_SRC)main.c
-	$(CC) $(FLAGS) $(SERVER_SRC)main.c -o $(SERVER_OUT)$(SERVER_FN) $(DEPS)
+server: $(SERVER_SRC)server.c
+	$(CC) $(FLAGS) $(SERVER_SRC)server.c -o $(SERVER_OUT)$(SERVER_FN) $(DEPS)
 
-client: $(CLIENT_SRC)main.c
-	$(CC) $(FLAGS) $(CLIENT_SRC)main.c -o $(CLIENT_OUT)$(CLIENT_FN) $(DEPS)
+client: $(CLIENT_SRC)client.c
+	$(CC) $(FLAGS) $(CLIENT_SRC)client.c -o $(CLIENT_OUT)$(CLIENT_FN) $(DEPS)
 
 val-server:
 	valgrind --leak-check=full ./$(SERVER_OUT)$(SERVER_FN) 8080
